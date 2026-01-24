@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Surrey Park AFL Shot Chart</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+    }
+
+    #layout {
+      display: flex;
+      height: 100vh;
+    }
+
+    #controls {
+      width: 260px;
+      padding: 20px;
+      background: #f2f2f2;
+      border-right: 1px solid #ccc;
+      overflow-y: auto;
+      line-height: 1.5;
+    }
+
+    #controls strong {
+      display: block;
+      margin-top: 18px;
+    }
+
+    label {
+      display: block;
+      margin: 10px 0;
+    }
+
+    #stats {
+      width: 300px;
+      padding: 20px;
+      background: #fafafa;
+      border-left: 1px solid #ccc;
+      overflow-y: auto;
+    }
+
+    svg {
+      flex: 1;
+      background: white;
+    }
+
+    .shot {
+      stroke: black;
+      stroke-width: 1;
+      opacity: 0.85;
+      cursor: pointer;
+    }
+
+    .goal   { fill: green; }
+    .behind { fill: orange; }
+
+    #tooltip {
+      position: absolute;
+      background: rgba(0,0,0,0.8);
+      color: white;
+      padding: 6px 8px;
+      font-size: 12px;
+      border-radius: 4px;
+      pointer-events: none;
+      display: none;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+
+    th, td {
+      border: 1px solid #ccc;
+      padding: 6px;
+      text-align: left;
+    }
+
+    th {
+      background: #eee;
+    }
+  </style>
+</head>
+<body>
+
+<div id="layout">
+
+  <!-- LEFT: FILTERS -->
+  <div id="controls">
+    <h3>Surrey Park Shot Chart</h3>
+
+    <strong>Result</strong>
+    <label><input type="checkbox" checked value="Goal" class="filter-result"> Goal</label>
+    <label><input type="checkbox" checked value="Behind" class="filter-result"> Behind</label>
+    <label><input type="checkbox" checked value="Miss" class="filter-result"> Miss</label>
+
+    <strong>Shot Type</strong>
+    <label><input type="checkbox" checked value="Set Shot" class="filter-type"> Set Shot</label>
+    <label><input type="checkbox" checked value="General Play" class="filter-type"> General Play</label>
+
+    <strong>Player</strong>
+    <select id="playerFilter"></select>
+
+    <strong>Round</strong>
+    <select id="roundFilter"></select>
+
+    <strong>Quarter</strong>
+    <select id="quarterFilter">
+      <option value="all">All</option>
+      <option>Q1</option>
+      <option>Q2</option>
+      <option>Q3</option>
+      <option>Q4</option>
+    </select>
+  </div>
+
+  <!-- MIDDLE: OVAL -->
+  <svg width="900" height="550" viewBox="-450 -275 900 550">
+    <defs>
+      <clipPath id="ovalClip">
+        <ellipse cx="0" cy="0" rx="420" ry="240"/>
+      </clipPath>
+    </defs>
+
+    <g transform="translate(0, -200) rotate(90) scale(1, 1.40)">
+      <ellipse cx="0" cy="0" rx="420" ry="240"
+               fill="#a9d18e" stroke="#5b7f3b" stroke-width="4"/>
+
+      <path d="M -300 -300 A 300 300 0 0 0 -300 300"
+            fill="none" stroke="white" stroke-width="4"
+            clip-path="url(#ovalClip)"/>
+
+      <path d="M 350 -300 A 300 300 0 0 0 350 300"
+            fill="none" stroke="white" stroke-width="4"
+            clip-path="url(#ovalClip)"/>
+
+      <rect x="-120" y="-90" width="240" height="180"
+            transform="translate(-120, 0)"
+            fill="none" stroke="white" stroke-width="4"/>
+
+      <rect x="-420" y="-18" width="50" height="36"
+            fill="none" stroke="white" stroke-width="4"/>
+
+      <rect x="370" y="-18" width="50" height="36"
+            fill="none" stroke="white" stroke-width="4"/>
+    </g>
+
+    <g id="shotsLayer"></g>
+  </svg>
+
+  <!-- RIGHT: STATS -->
+  <div id="stats">
+    <h3>Summary Stats</h3>
+    <table>
+      <tbody id="statsBody"></tbody>
+    </table>
+  </div>
+
+</div>
+
+<div id="tooltip"></div>
+
+<script>
+let allShots = [];
+const layer = document.getElementById("shotsLayer");
+const tooltip = document.getElementById("tooltip");
+const statsBody = document.getElementById("statsBody");
+
+fetch("shots.csv")
+  .then(r => r.text())
+  .then(text => {
+    // FIX: handle Windows line endings + trim fields
+    const rows = text.trim().split(/\r?\n/).slice(1);
+
+    allShots = rows.map(r => {
+      const [x,y,result,type,player,round,quarter] = r.split(",");
+      return { 
+        x: +x, 
+        y: +y, 
+        result: result.trim(), 
+        type: type.trim(), 
+        player: player.trim(), 
+        round: round.trim(), 
+        quarter: quarter.trim() 
+      };
+    });
+
+    buildFilters();
+    drawShots();
+  });
+
+function buildFilters() {
+  const players = [...new Set(allShots.map(s=>s.player))];
+  const rounds  = [...new Set(allShots.map(s=>s.round))];
+
+  playerFilter.innerHTML = `<option value="all">All</option>` +
+    players.map(p=>`<option>${p}</option>`).join("");
+
+  roundFilter.innerHTML = `<option value="all">All</option>` +
+    rounds.map(r=>`<option>${r}</option>`).join("");
+}
+
+function showTooltip(e, s) {
+  tooltip.style.display="block";
+  tooltip.style.left=e.pageX+10+"px";
+  tooltip.style.top=e.pageY+10+"px";
+  tooltip.innerHTML = `
+    <strong>${s.player}</strong><br>
+    ${s.result} (${s.type})<br>
+    ${s.round} ${s.quarter}
+  `;
+}
+
+function hideTooltip() {
+  tooltip.style.display="none";
+}
+
+function drawShots() {
+  layer.innerHTML = "";
+
+  const results = [...document.querySelectorAll(".filter-result:checked")].map(i=>i.value);
+  const types   = [...document.querySelectorAll(".filter-type:checked")].map(i=>i.value);
+  const player  = playerFilter.value;
+  const round   = roundFilter.value;
+  const quarter = quarterFilter.value;
+
+  const filtered = allShots.filter(s =>
+    results.includes(s.result) &&
+    types.includes(s.type) &&
+    (player==="all" || s.player===player) &&
+    (round==="all" || s.round===round) &&
+    (quarter==="all" || s.quarter===quarter)
+  );
+
+  filtered.forEach(s => {
+    if (s.result === "Miss") {
+      const size = 4;
+
+      const line1 = document.createElementNS("http://www.w3.org/2000/svg","line");
+      const line2 = document.createElementNS("http://www.w3.org/2000/svg","line");
+
+      line1.setAttribute("x1", s.x - size);
+      line1.setAttribute("y1", s.y - size);
+      line1.setAttribute("x2", s.x + size);
+      line1.setAttribute("y2", s.y + size);
+
+      line2.setAttribute("x1", s.x - size);
+      line2.setAttribute("y1", s.y + size);
+      line2.setAttribute("x2", s.x + size);
+      line2.setAttribute("y2", s.y - size);
+
+      [line1,line2].forEach(l=>{
+        l.setAttribute("stroke","red");
+        l.setAttribute("stroke-width",2);
+        l.onmousemove = e => showTooltip(e, s);
+        l.onmouseleave = hideTooltip;
+        layer.appendChild(l);
+      });
+    } else {
+      const c = document.createElementNS("http://www.w3.org/2000/svg","circle");
+      c.setAttribute("cx",s.x);
+      c.setAttribute("cy",s.y);
+      c.setAttribute("r",4);
+      c.setAttribute("class","shot "+s.result.toLowerCase());
+      c.onmousemove = e => showTooltip(e, s);
+      c.onmouseleave = hideTooltip;
+      layer.appendChild(c);
+    }
+  });
+
+  updateStats(filtered);
+}
+
+function updateStats(data) {
+  const total = data.length;
+  const goals = data.filter(s=>s.result==="Goal").length;
+  const behinds = data.filter(s=>s.result==="Behind").length;
+  const misses = data.filter(s=>s.result==="Miss").length;
+
+  const setShots = data.filter(s=>s.type==="Set Shot");
+  const playShots = data.filter(s=>s.type==="General Play");
+
+  const setGoals = setShots.filter(s=>s.result==="Goal").length;
+  const playGoals = playShots.filter(s=>s.result==="Goal").length;
+
+  const pct = (n,d)=> d? (100*n/d).toFixed(1)+"%" : "0%";
+
+  statsBody.innerHTML = `
+    <tr><td>Total Shots</td><td>${total}</td></tr>
+    <tr><td>Goals</td><td>${goals}</td></tr>
+    <tr><td>Behinds</td><td>${behinds}</td></tr>
+    <tr><td>Misses</td><td>${misses}</td></tr>
+    <tr><td>Set Shots</td><td>${setShots.length}</td></tr>
+    <tr><td>General Play Shots</td><td>${playShots.length}</td></tr>
+    <tr><td>Set Shot %</td><td>${pct(setShots.length,total)}</td></tr>
+    <tr><td>General Play %</td><td>${pct(playShots.length,total)}</td></tr>
+    <tr><td>Goal Accuracy</td><td>${pct(goals,total)}</td></tr>
+    <tr><td>Set Shot Accuracy</td><td>${pct(setGoals,setShots.length)}</td></tr>
+    <tr><td>General Play Accuracy</td><td>${pct(playGoals,playShots.length)}</td></tr>
+  `;
+}
+
+document.querySelectorAll("input, select").forEach(el=>{
+  el.addEventListener("change", drawShots);
+});
+</script>
+
+</body>
+</html>
